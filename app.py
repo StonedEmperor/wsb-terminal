@@ -127,18 +127,27 @@ def evaluate_signal(ext_change, pre_vol, rvol):
 
 def get_reddit_sentiment():
     try:
-        url = "https://apewisdom.io/api/v1/by-market/all-stocks"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=4)
-        data = res.json()
-        results = data.get('results', [])[:10]
-        return [{
-            'rank': item.get('rank'),
-            'ticker': item.get('ticker'),
-            'mentions': item.get('mentions'),
-            'upvotes': item.get('upvotes')
-        } for item in results]
-    except Exception:
+        # Fixed ApeWisdom API endpoint for WallStreetBets stocks
+        url = "https://apewisdom.io/api/v1/filter/all-stocks/page/1"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.get(url, headers=headers, timeout=5)
+        
+        if res.status_code == 200:
+            data = res.json()
+            results = data.get('results', [])[:10]
+            
+            parsed = []
+            for item in results:
+                parsed.append({
+                    'rank': item.get('rank', '-'),
+                    'ticker': item.get('ticker', ''),
+                    'mentions': item.get('mentions', 0),
+                    'upvotes': item.get('upvotes', 0)
+                })
+            return parsed
+        return []
+    except Exception as e:
+        print(f"Reddit API Error: {e}")
         return []
 
 @app.route('/')
