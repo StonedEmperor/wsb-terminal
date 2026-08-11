@@ -5,7 +5,7 @@ import requests
 
 app = Flask(__name__)
 
-# Core liquid watchlist for fast loading & reliable execution
+# Core liquid watchlist for fast loading
 WATCHLIST = [
     "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "TSLA", 
     "AMD", "PLTR", "GME", "QQQ", "SPY", "COIN", "MU", "SMCI"
@@ -91,15 +91,21 @@ HTML_TEMPLATE = """
             <tr>
                 <th>Rank</th>
                 <th>Ticker</th>
-                <th>Mentions</th>
-                <th>Upvotes</th>
+                <th>Comments</th>
+                <th>Sentiment</th>
             </tr>
             {% for item in reddit_trending %}
             <tr>
                 <td>#{{ item.rank }}</td>
                 <td class="ticker">{{ item.ticker }}</td>
-                <td class="green">{{ item.mentions }} 🔥</td>
-                <td>{{ item.upvotes }}</td>
+                <td class="green">{{ item.mentions }} 💬</td>
+                <td>
+                    {% if item.sentiment == 'Bullish' %}
+                        <span class="green">BULLISH 🚀</span>
+                    {% else %}
+                        <span class="red">BEARISH 📉</span>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </table>
@@ -118,7 +124,6 @@ def format_vol(n):
     return str(n)
 
 def evaluate_signal(ext_change, pre_vol, rvol):
-    # Buy signal rules
     if ext_change >= 2.0 and rvol >= 1.5 and pre_vol >= 100000:
         return 'BUYABLE'
     elif ext_change >= 2.0 and (rvol < 1.5 or pre_vol < 100000):
@@ -127,21 +132,20 @@ def evaluate_signal(ext_change, pre_vol, rvol):
 
 def get_reddit_sentiment():
     try:
-        url = "https://apewisdom.io/api/v1/filter/all-stocks/page/1"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        # Open Tradestie WSB API (reliable for cloud hosting)
+        url = "https://tradestie.com/api/v1/apps/reddit"
+        headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers, timeout=5)
         
         if res.status_code == 200:
             data = res.json()
-            results = data.get('results', [])[:10]
-            
             parsed = []
-            for item in results:
+            for i, item in enumerate(data[:10], 1):
                 parsed.append({
-                    'rank': item.get('rank', '-'),
+                    'rank': i,
                     'ticker': item.get('ticker', ''),
-                    'mentions': item.get('mentions', 0),
-                    'upvotes': item.get('upvotes', 0)
+                    'mentions': item.get('no_of_comments', 0),
+                    'sentiment': item.get('sentiment', 'Bullish')
                 })
             return parsed
         return []
