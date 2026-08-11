@@ -2,7 +2,6 @@ from flask import Flask, render_template_string
 import yfinance as yf
 import pandas as pd
 import requests
-from datetime import datetime
 
 app = Flask(__name__)
 
@@ -18,7 +17,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>⚡ PRE-MARKET, WSB & NEWS TERMINAL</title>
+    <title>⚡ PRE-MARKET & SIGNAL TERMINAL</title>
     <meta http-equiv="refresh" content="30">
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; padding: 15px; margin: 0; }
@@ -38,6 +37,11 @@ HTML_TEMPLATE = """
         .wsb-header { color: #f0883e; font-weight: bold; }
         .news-header { color: #d2a8ff; font-weight: bold; }
         
+        /* SIGNAL BADGES */
+        .signal-buy { background-color: #238636; color: #ffffff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem; }
+        .signal-caution { background-color: #d29922; color: #000000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem; }
+        .signal-noplay { background-color: #21262d; color: #8b949e; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
+        
         .tag-bullish { background-color: #238636; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
         .tag-bearish { background-color: #da3633; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
         .tag-neutral { background-color: #30363d; color: #8b949e; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
@@ -46,23 +50,32 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>⚡ PRE-MARKET MOMENTUM TERMINAL</h1>
-    <div class="sub">Large Cap ($10B+) • Pure Pre-Market, WSB & News Radar</div>
+    <div class="sub">Large Cap ($10B+) • RVOL $\ge 1.5\text{x}$ & Vol $\ge 100\text{K}$ Signal Check</div>
     
-    <!-- PRE-MARKET GAINERS -->
+    <!-- PRE-MARKET GAINERS WITH BUY SIGNAL -->
     <div class="card">
-        <h2 class="green">🚀 TOP PRE-MARKET GAINERS</h2>
+        <h2 class="green">🚀 TOP PRE-MARKET GAINERS & SIGNALS</h2>
         <table>
             <tr>
+                <th>Signal</th>
                 <th>Ticker</th>
                 <th>Pre Price</th>
                 <th>Pre Chg %</th>
                 <th>Pre Vol</th>
                 <th>RVOL</th>
                 <th>52W High</th>
-                <th>52W Low</th>
             </tr>
             {% for stock in pre_gainers %}
             <tr>
+                <td>
+                    {% if stock.signal == 'BUYABLE' %}
+                        <span class="signal-buy">BUYABLE 🚀</span>
+                    {% elif stock.signal == 'CAUTION' %}
+                        <span class="signal-caution">LOW VOL ⚠️</span>
+                    {% else %}
+                        <span class="signal-noplay">NO PLAY</span>
+                    {% endif %}
+                </td>
                 <td class="ticker">{{ stock.ticker }}</td>
                 <td>${{ stock.ext_price }}</td>
                 <td class="green">+{{ stock.ext_change }}%</td>
@@ -75,7 +88,6 @@ HTML_TEMPLATE = """
                     {% endif %}
                 </td>
                 <td>${{ stock.fifty_two_high }}</td>
-                <td>${{ stock.fifty_two_low }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -92,7 +104,6 @@ HTML_TEMPLATE = """
                 <th>Pre Vol</th>
                 <th>RVOL</th>
                 <th>52W High</th>
-                <th>52W Low</th>
             </tr>
             {% for stock in pre_losers %}
             <tr>
@@ -102,7 +113,6 @@ HTML_TEMPLATE = """
                 <td>{{ stock.pre_vol_fmt }}</td>
                 <td>{{ stock.rvol }}x</td>
                 <td>${{ stock.fifty_two_high }}</td>
-                <td>${{ stock.fifty_two_low }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -184,6 +194,15 @@ def analyze_sentiment(title):
         return 'BEARISH'
     return 'NEUTRAL'
 
+def evaluate_signal(ext_change, pre_vol, rvol):
+    # Rule 1: High Change + High RVOL (>=1.5x) + Good Liquidity (>=100k shares) = BUYABLE
+    if ext_change >= 2.0 and rvol >= 1.5 and pre_vol >= 100000:
+        return 'BUYABLE'
+    # Rule 2: Price Pumping but volume or RVOL is lacking = CAUTION
+    elif ext_change >= 2.0 and (rvol < 1.5 or pre_vol < 100000):
+        return 'CAUTION'
+    return 'NO PLAY'
+
 def get_reddit_sentiment():
     try:
         url = "https://apewisdom.io/api/v1/by-market/all-stocks"
@@ -202,11 +221,11 @@ def get_reddit_sentiment():
 
 def get_stock_news(top_tickers):
     news_items = []
-    for symbol in top_tickers[:5]: # Get news for top 5 gainers/movers
+    for symbol in top_tickers[:5]:
         try:
             t = yf.Ticker(symbol)
             news = t.news
-            for item in news[:2]: # Top 2 stories per ticker
+            for item in news[:2]:
                 content = item.get('content', {})
                 title = content.get('title') or item.get('title', '')
                 provider = content.get('provider', {}).get('displayName') or item.get('publisher', 'News')
@@ -243,9 +262,10 @@ def index():
             avg_vol = info.get('averageVolume10days') or info.get('averageDailyVolume10Day') or 1
             
             rvol = round(pre_vol / (avg_vol / 13), 2) if avg_vol > 0 else 0
-            
             fifty_two_high = info.get('fiftyTwoWeekHigh', 0)
-            fifty_two_low = info.get('fiftyTwoWeekLow', 0)
+
+            # Generate Signal
+            signal = evaluate_signal(ext_change, pre_vol, rvol)
 
             data_list.append({
                 'ticker': symbol,
@@ -254,24 +274,18 @@ def index():
                 'pre_vol_fmt': format_vol(pre_vol),
                 'rvol': rvol,
                 'fifty_two_high': round(fifty_two_high, 2),
-                'fifty_two_low': round(fifty_two_low, 2)
+                'signal': signal
             })
         except Exception:
             continue
 
     df = pd.DataFrame(data_list)
     
-    pre_gainers_df = df.sort_values(by='ext_change', ascending=False).head(10)
-    pre_losers_df = df.sort_values(by='ext_change', ascending=True).head(10)
+    pre_gainers = df.sort_values(by='ext_change', ascending=False).head(10).to_dict('records')
+    pre_losers = df.sort_values(by='ext_change', ascending=True).head(10).to_dict('records')
     
-    pre_gainers = pre_gainers_df.to_dict('records')
-    pre_losers = pre_losers_df.to_dict('records')
-    
-    # Get top tickers to fetch news for
     top_movers = [s['ticker'] for s in pre_gainers[:5]]
     news_list = get_stock_news(top_movers)
-    
-    # Reddit Sentiment
     reddit_trending = get_reddit_sentiment()
 
     return render_template_string(
