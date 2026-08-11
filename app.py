@@ -5,7 +5,7 @@ import requests
 
 app = Flask(__name__)
 
-# Core liquid watchlist for fast loading
+# Core liquid watchlist for fast loading & reliable execution
 WATCHLIST = [
     "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "TSLA", 
     "AMD", "PLTR", "GME", "QQQ", "SPY", "COIN", "MU", "SMCI"
@@ -43,7 +43,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>⚡ PRE-MARKET SIGNAL TERMINAL</h1>
-    <div class="sub">RVOL $\ge 1.5\text{x}$ & Volume $\ge 100\text{K}$ Rules Engine</div>
+    <div class="sub">RVOL ≥ 1.5x & Volume ≥ 100K Rules Engine</div>
     
     <!-- PRE-MARKET GAINERS WITH BUY SIGNAL -->
     <div class="card">
@@ -127,7 +127,6 @@ def evaluate_signal(ext_change, pre_vol, rvol):
 
 def get_reddit_sentiment():
     try:
-        # Fixed ApeWisdom API endpoint for WallStreetBets stocks
         url = "https://apewisdom.io/api/v1/filter/all-stocks/page/1"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         res = requests.get(url, headers=headers, timeout=5)
@@ -146,8 +145,7 @@ def get_reddit_sentiment():
                 })
             return parsed
         return []
-    except Exception as e:
-        print(f"Reddit API Error: {e}")
+    except Exception:
         return []
 
 @app.route('/')
