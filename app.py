@@ -132,7 +132,6 @@ def evaluate_signal(ext_change, pre_vol, rvol):
 
 def get_reddit_sentiment():
     try:
-        # Open Tradestie WSB API (reliable for cloud hosting)
         url = "https://tradestie.com/api/v1/apps/reddit"
         headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers, timeout=5)
@@ -159,16 +158,18 @@ def index():
     for symbol in WATCHLIST:
         try:
             t = yf.Ticker(symbol)
-            info = t.info
+            df = t.history(period="5d", prepost=True)
+            if df.empty or len(df) < 2:
+                continue
             
-            previous_close = info.get('previousClose', 1) or 1
-            current_price = info.get('currentPrice') or info.get('regularMarketPrice') or previous_close
+            previous_close = float(df['Close'].iloc[-2])
+            current_price = float(df['Close'].iloc[-1])
+            ext_price = current_price
             
-            ext_price = info.get('preMarketPrice') or info.get('postMarketPrice') or current_price
             ext_change = round(((ext_price - previous_close) / previous_close) * 100, 2)
             
-            pre_vol = info.get('preMarketVolume') or info.get('volume') or 0
-            avg_vol = info.get('averageVolume10days') or info.get('averageDailyVolume10Day') or 1
+            pre_vol = int(df['Volume'].iloc[-1])
+            avg_vol = float(df['Volume'].mean()) if len(df) > 0 else 1000000
             
             rvol = round(pre_vol / (avg_vol / 13), 2) if avg_vol > 0 else 0
             signal = evaluate_signal(ext_change, pre_vol, rvol)
@@ -181,12 +182,13 @@ def index():
                 'rvol': rvol,
                 'signal': signal
             })
-        except Exception:
+        except Exception as e:
+            print(f"Error fetching {symbol}: {e}")
             continue
 
     if data_list:
-        df = pd.DataFrame(data_list)
-        pre_gainers = df.sort_values(by='ext_change', ascending=False).head(10).to_dict('records')
+        df_res = pd.DataFrame(data_list)
+        pre_gainers = df_res.sort_values(by='ext_change', ascending=False).head(10).to_dict('records')
     else:
         pre_gainers = []
 
